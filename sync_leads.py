@@ -1,0 +1,211 @@
+from initialize_sdk import initialize_sdk
+from zcrmsdk.src.com.zoho.crm.api.record import RecordOperations
+from zcrmsdk.src.com.zoho.crm.api.record import GetRecordsParam
+from zcrmsdk.src.com.zoho.crm.api import ParameterMap
+import psycopg2
+import os
+import logging
+from datetime import datetime
+from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+class LeadSyncService:
+    def __init__(self):
+        self.db_config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'user': os.getenv('DB_USER', 'kishoresuresh'),
+            'password': os.getenv('DB_PASSWORD', ''),
+            'dbname': os.getenv('DB_NAME', 'crm_sync'),
+            'port': os.getenv('DB_PORT', '5432')
+        }
+        self.sync_stats = {
+            'total_leads': 0,
+            'new_leads': 0,
+            'updated_leads': 0,
+            'errors': []
+        }
+    
+    def create_database_table(self):
+        """Create the leads table if it doesn't exist"""
+        try:
+            db = psycopg2.connect(**self.db_config)
+            cursor = db.cursor()
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS leads (
+                    id VARCHAR(255) PRIMARY KEY,
+                    full_name VARCHAR(255),
+                    email VARCHAR(255),
+                    phone VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create index on email for faster lookups
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)
+            """)
+            
+            db.commit()
+            cursor.close()
+            db.close()
+            logger.info("Database table created/verified successfully")
+            
+        except Exception as e:
+            logger.error(f"Error creating database table: {e}")
+            raise
+    
+    def get_existing_lead_ids(self) -> set:
+        """Get all existing lead IDs from the database"""
+        try:
+            db = psycopg2.connect(**self.db_config)
+            cursor = db.cursor()
+            
+            cursor.execute("SELECT id FROM leads")
+            existing_ids = {row[0] for row in cursor.fetchall()}
+            
+            cursor.close()
+            db.close()
+            
+            return existing_ids
+            
+        except Exception as e:
+            logger.error(f"Error fetching existing lead IDs: {e}")
+            return set()
+    
+    def fetch_leads_from_zoho(self) -> Optional[List]:
+        """Fetch leads from Zoho CRM"""
+        try:
+            initialize_sdk()
+            module_api_name = "Leads"
+            param_instance = ParameterMap()
+            param_instance.add(GetRecordsParam.page, 1)
+            param_instance.add(GetRecordsParam.per_page, 200)
+
+            response = RecordOperations().get_records(module_api_name, param_instance)
+            logger.info(f"Response Received from Zoho CRM: {response}")
+
+            if response is None:
+                logger.warning("No response received from Zoho CRM.")
+                return None
+
+            logger.info(f"Status Code: {response.get_status_code()}")
+
+            if response.get_status_code() == 200:
+                record_list = response.get_object().get_data()
+                logger.info(f"Successfully fetched {len(record_list) if record_list else 0} leads from Zoho CRM")
+                return record_list
+            else:
+                logger.error(f"Failed to fetch leads. Status code: {response.get_status_code()}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error fetching leads from Zoho CRM: {e}")
+            self.sync_stats['errors'].append(f"Zoho API error: {str(e)}")
+            return None
+    
+    def save_to_local_db(self, records: List) -> None:
+        """Save leads to local database"""
+        if not records:
+            logger.info("No records to save")
+            return
+        
+        try:
+            # Create table if not exists
+            self.create_database_table()
+            
+            # Get existing lead IDs
+            existing_ids = self.get_existing_lead_ids()
+            
+            db = psycopg2.connect(**self.db_config)
+            cursor = db.cursor()
+            
+            for record in records:
+                try:
+                    lead_id = record.get_id()
+                    data = record.get_key_values()
+                    full_name = data.get("Full_Name", "")
+                    email = data.get("Email", "")
+                    phone = data.get("Phone", "")
+                    
+                    # Track if this is a new or updated lead
+                    is_new_lead = lead_id not in existing_ids
+                    
+                    cursor.execute("""
+                        INSERT INTO leads (id, full_name, email, phone, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO UPDATE SET
+                            full_name = EXCLUDED.full_name,
+                            email = EXCLUDED.email,
+                            phone = EXCLUDED.phone,
+                            updated_at = EXCLUDED.updated_at
+                    """, (lead_id, full_name, email, phone, datetime.now(), datetime.now()))
+                    
+                    if is_new_lead:
+                        self.sync_stats['new_leads'] += 1
+                    else:
+                        self.sync_stats['updated_leads'] += 1
+                    
+                    self.sync_stats['total_leads'] += 1
+                    
+                except Exception as e:
+                    error_msg = f"Error processing lead {lead_id}: {str(e)}"
+                    logger.error(error_msg)
+                    self.sync_stats['errors'].append(error_msg)
+                    continue
+
+            db.commit()
+            cursor.close()
+            db.close()
+            
+            logger.info(f"Successfully saved {self.sync_stats['total_leads']} leads to database")
+            
+        except Exception as e:
+            error_msg = f"Database error: {str(e)}"
+            logger.error(error_msg)
+            self.sync_stats['errors'].append(error_msg)
+            raise
+    
+    def get_sync_statistics(self) -> Dict:
+        """Get synchronization statistics"""
+        return {
+            **self.sync_stats,
+            'sync_time': datetime.now().isoformat(),
+            'status': 'success' if not self.sync_stats['errors'] else 'partial_success' if self.sync_stats['total_leads'] > 0 else 'failed'
+        }
+
+def sync_leads():
+    """Main function to sync leads from Zoho CRM to local database"""
+    sync_service = LeadSyncService()
+    
+    try:
+        logger.info("Starting lead synchronization...")
+        
+        # Fetch leads from Zoho CRM
+        records = sync_service.fetch_leads_from_zoho()
+        
+        if records:
+            # Save to local database
+            sync_service.save_to_local_db(records)
+            
+            # Get statistics
+            stats = sync_service.get_sync_statistics()
+            logger.info(f"Lead sync completed: {stats}")
+            
+            return stats
+        else:
+            logger.warning("No records to synchronize")
+            return sync_service.get_sync_statistics()
+            
+    except Exception as e:
+        error_msg = f"Lead synchronization failed: {str(e)}"
+        logger.error(error_msg)
+        sync_service.sync_stats['errors'].append(error_msg)
+        return sync_service.get_sync_statistics()
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    result = sync_leads()
+    print(f"Leads synchronization completed: {result}")
