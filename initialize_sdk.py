@@ -6,19 +6,30 @@ from zcrmsdk.src.com.zoho.api.authenticator.oauth_token import OAuthToken, Token
 from zcrmsdk.src.com.zoho.crm.api.sdk_config import SDKConfig
 from CADataCenter import CADataCenter
 import os
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 def initialize_sdk():
     logger = Logger.get_instance(Logger.Levels.INFO, "./sdk_log.log")
-    user = UserSignature(os.getenv('ZOHO_USER_EMAIL'))
+    userEmail = os.getenv('ZOHO_USER_EMAIL')
+    print("User Email:", userEmail)
+    user = UserSignature(userEmail)
 
     environment = CADataCenter.PRODUCTION()
     print("Environment Created:", environment)
+    # Initialize OAuth token
+    clientId = os.getenv('ZOHO_CLIENT_ID')
+    clientSecret = os.getenv('ZOHO_CLIENT_SECRET')
+    token = os.getenv('ZOHO_REFRESH_TOKEN')
+    redirectUrl = os.getenv('ZOHO_REDIRECT_URL')
     token = OAuthToken(
-        client_id=os.getenv('ZOHO_CLIENT_ID'),
-        client_secret=os.getenv('ZOHO_CLIENT_SECRET'),
-        token=os.getenv('ZOHO_TOKEN'),
+        client_id=clientId,
+        client_secret=clientSecret,
+        token=token,
         token_type=TokenType.REFRESH,
-        redirect_url=os.getenv('ZOHO_REDIRECT_URL'),
+        redirect_url=redirectUrl,
     )
     print("Token Generated:", token)
     store = FileStore(file_path="./zoho_sdk_tokens.txt")
