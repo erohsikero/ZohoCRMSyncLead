@@ -5,8 +5,10 @@ from zcrmsdk.src.com.zoho.crm.api import ParameterMap
 import psycopg2
 import os
 import logging
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional
+from mail_service import MailService
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +25,18 @@ class LeadSyncService:
             'total_leads': 0,
             'new_leads': 0,
             'updated_leads': 0,
-            'errors': []
+            'errors': [],
+            'new_leads_details': []  # Store new lead details for email notifications
         }
+        self.mail_service = MailService()
+        self.notification_emails = self._get_notification_emails()
+    
+    def _get_notification_emails(self) -> List[str]:
+        """Get list of email addresses for notifications"""
+        emails_str = os.getenv('NOTIFICATION_EMAILS', '')
+        if emails_str:
+            return [email.strip() for email in emails_str.split(',') if email.strip()]
+        return []
     
     def create_database_table(self):
         """Create the leads table if it doesn't exist"""
@@ -145,6 +157,15 @@ class LeadSyncService:
                     
                     if is_new_lead:
                         self.sync_stats['new_leads'] += 1
+                        # Store new lead details for email notification
+                        self.sync_stats['new_leads_details'].append({
+                            'id': lead_id,
+                            'full_name': full_name,
+                            'email': email,
+                            'phone': phone,
+                            'sync_time': datetime.now().isoformat()
+                        })
+                        logger.info(f"New lead detected: {full_name} ({email})")
                     else:
                         self.sync_stats['updated_leads'] += 1
                     
@@ -168,6 +189,82 @@ class LeadSyncService:
             self.sync_stats['errors'].append(error_msg)
             raise
     
+    async def send_new_lead_notifications(self):
+        """Send email notifications for new leads"""
+        if not self.notification_emails:
+            logger.info("No notification emails configured")
+            return
+        
+        if not self.sync_stats['new_leads_details']:
+            logger.info("No new leads to notify about")
+            return
+        
+        logger.info(f"Sending new lead notifications to {len(self.notification_emails)} recipients")
+        
+        for new_lead in self.sync_stats['new_leads_details']:
+            try:
+                # Send individual lead notification
+                for email in self.notification_emails:
+                    success = await self.mail_service.send_mail(
+                        to_email=email,
+                        template_name='lead_notification',
+                        template_data={
+                            'lead_name': new_lead['full_name'],
+                            'lead_email': new_lead['email'],
+                            'lead_phone': new_lead['phone'],
+                            'sync_time': new_lead['sync_time'],
+                            'lead_id': new_lead['id']
+                        }
+                    )
+                    
+                    if success:
+                        logger.info(f"New lead notification sent to {email} for lead: {new_lead['full_name']}")
+                    else:
+                        logger.error(f"Failed to send new lead notification to {email}")
+                        
+            except Exception as e:
+                logger.error(f"Error sending new lead notification: {e}")
+    
+    async def send_sync_summary_email(self):
+        """Send sync summary email"""
+        if not self.notification_emails:
+            return
+        
+        stats = self.get_sync_statistics()
+        
+        # Prepare error message for template
+        error_message = ""
+        if stats['errors']:
+            error_message = f"<p><strong>Errors encountered:</strong></p><ul>"
+            for error in stats['errors'][:5]:  # Limit to first 5 errors
+                error_message += f"<li>{error}</li>"
+            error_message += "</ul>"
+            if len(stats['errors']) > 5:
+                error_message += f"<p>... and {len(stats['errors']) - 5} more errors</p>"
+        
+        try:
+            for email in self.notification_emails:
+                success = await self.mail_service.send_mail(
+                    to_email=email,
+                    template_name='sync_report',
+                    template_data={
+                        'total_leads': str(stats['total_leads']),
+                        'new_leads': str(stats['new_leads']),
+                        'updated_leads': str(stats['updated_leads']),
+                        'sync_time': stats['sync_time'],
+                        'status': stats['status'],
+                        'error_message': error_message
+                    }
+                )
+                
+                if success:
+                    logger.info(f"Sync summary sent to {email}")
+                else:
+                    logger.error(f"Failed to send sync summary to {email}")
+                    
+        except Exception as e:
+            logger.error(f"Error sending sync summary email: {e}")
+    
     def get_sync_statistics(self) -> Dict:
         """Get synchronization statistics"""
         return {
@@ -178,6 +275,10 @@ class LeadSyncService:
 
 def sync_leads():
     """Main function to sync leads from Zoho CRM to local database"""
+    return asyncio.run(async_sync_leads())
+
+async def async_sync_leads():
+    """Async version of sync leads with email notifications"""
     sync_service = LeadSyncService()
     
     try:
@@ -190,6 +291,12 @@ def sync_leads():
             # Save to local database
             sync_service.save_to_local_db(records)
             
+            # Send email notifications for new leads
+            await sync_service.send_new_lead_notifications()
+            
+            # Send sync summary email
+            await sync_service.send_sync_summary_email()
+            
             # Get statistics
             stats = sync_service.get_sync_statistics()
             logger.info(f"Lead sync completed: {stats}")
@@ -197,12 +304,21 @@ def sync_leads():
             return stats
         else:
             logger.warning("No records to synchronize")
+            # Still send summary email even if no records
+            await sync_service.send_sync_summary_email()
             return sync_service.get_sync_statistics()
             
     except Exception as e:
         error_msg = f"Lead synchronization failed: {str(e)}"
         logger.error(error_msg)
         sync_service.sync_stats['errors'].append(error_msg)
+        
+        # Send error notification
+        try:
+            await sync_service.send_sync_summary_email()
+        except Exception as email_error:
+            logger.error(f"Failed to send error notification email: {email_error}")
+        
         return sync_service.get_sync_statistics()
 
 if __name__ == "__main__":

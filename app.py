@@ -77,8 +77,8 @@ def sync_leads_job():
     """Background job to sync leads"""
     try:
         logger.info("Starting scheduled lead sync...")
-        sync_leads()
-        logger.info("Lead sync completed successfully")
+        result = sync_leads()
+        logger.info(f"Lead sync completed successfully: {result}")
     except Exception as e:
         logger.error(f"Error during scheduled lead sync: {e}")
 
