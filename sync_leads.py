@@ -130,6 +130,7 @@ class LeadSyncService:
             
             # Get existing lead IDs
             existing_ids = self.get_existing_lead_ids()
+            # print(f"Existing lead IDs: {existing_ids}")
             
             db = psycopg2.connect(**self.db_config)
             cursor = db.cursor()
@@ -137,13 +138,15 @@ class LeadSyncService:
             for record in records:
                 try:
                     lead_id = record.get_id()
+                    # print(f"Processing lead ID: {lead_id}")
                     data = record.get_key_values()
                     full_name = data.get("Full_Name", "")
                     email = data.get("Email", "")
                     phone = data.get("Phone", "")
                     
                     # Track if this is a new or updated lead
-                    is_new_lead = lead_id not in existing_ids
+                    is_new_lead = str(lead_id) not in existing_ids
+                    # print(f"Is new lead: {is_new_lead}")
                     
                     cursor.execute("""
                         INSERT INTO leads (id, full_name, email, phone, created_at, updated_at)
