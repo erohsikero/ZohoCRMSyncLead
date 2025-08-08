@@ -1,8 +1,11 @@
 from queue import Empty
+from zcrmsdk.src.com.zoho.crm.api.util.choice import Choice
 from initialize_sdk import initialize_sdk
 from zcrmsdk.src.com.zoho.crm.api.record import RecordOperations
 from zcrmsdk.src.com.zoho.crm.api.record import GetRecordsParam
+from zcrmsdk.src.com.zoho.crm.api.record import Record
 from zcrmsdk.src.com.zoho.crm.api import ParameterMap
+from zcrmsdk.src.com.zoho.crm.api.record.body_wrapper import BodyWrapper
 import psycopg2
 import os
 import logging
@@ -163,7 +166,9 @@ class LeadSyncService:
                         self.sync_stats['new_leads'] += 1
                         # Store new lead details for email notification
                         # print(f"New lead detected Data: {data}")
-                        # print(f"New lead detected: {full_name} ({email} {data.get('Designation', '')})")
+                        lead_status_choice = data.get('Lead_Status')
+                        lead_status = lead_status_choice.get_value() if lead_status_choice else None
+                        print(f"New lead detected: {full_name} ({email} \nLead Status : {lead_status} designation : {data.get('Designation', '')} \n{data})")
                         lead_details = {
                             'id': lead_id,
                             'full_name': full_name,
@@ -235,20 +240,31 @@ class LeadSyncService:
                 logger.error(f"Error sending new lead notification: {e}")
     
     async def send_cold_mail_to_new_lead(self, lead_data: Dict):
-        """Send cold email to a new lead using CRM data"""
+        """Send cold email to a new lead using CRM data and update status based on result"""
         try:
             # Extract data from CRM
             crm_fullname = lead_data.get('full_name', '')
             crm_title = lead_data.get('title', 'Engineer')  # Default to Engineer if no title
             crm_email = lead_data.get('email', '')
+            lead_id = lead_data.get('id', '')
+            lead_status_choice = lead_data.get('Lead_Status')
+            lead_status = lead_status_choice.get_value() if lead_status_choice else ''
 
-            print(f"Sending cold email to EMAIL : {crm_email} \n NAME : {crm_fullname} \n TITLE : {crm_title} \n ID : {lead_data.get('id', '')}")
-            
-            
+
+            if lead_status in ('Contacted'): 
+                print(f"New Lead Contact already present As Contacted EMAIL : {crm_email} \n NAME : {crm_fullname} \n TITLE : {crm_title} \n Lead Status {lead_status}\n ID : {lead_id} ")
+                return True
+
+            # Check if email exists
             if not crm_email:
                 logger.error(f"No email address found for lead: {crm_fullname}")
+                # Update status to "Lost Lead" in CRM
+                if lead_id:
+                    self.update_lead_status_in_crm(lead_id, "Lost Lead")
+                    logger.info(f"Updated lead {lead_id} status to 'Lost Lead' - no email found")
                 return False
             
+            print(f"Sending cold email to EMAIL : {crm_email} \n NAME : {crm_fullname} \n TITLE : {crm_title} \n ID : {lead_id} \n Lead Status {lead_status}")
             # Send cold email to the lead
             success = await self.mail_service.send_mail(
                 to_email=crm_email,
@@ -260,15 +276,65 @@ class LeadSyncService:
                 }
             )
             
-            if success:
-                logger.info(f"Cold email sent successfully to {crm_email} for lead: {crm_fullname}")
-                return True
+            # Update CRM status based on email sending result
+            if lead_id:
+                if success:
+                    # Email sent successfully - update to "Contacted"
+                    self.update_lead_status_in_crm(lead_id, "Contacted")
+                    logger.info(f"Cold email sent successfully to {crm_email} for lead: {crm_fullname}")
+                    logger.info(f"Updated lead {lead_id} status to 'Contacted'")
+                    return True
+                else:
+                    # Email failed to send - update to "Junk Lead"
+                    self.update_lead_status_in_crm(lead_id, "Junk Lead")
+                    logger.error(f"Failed to send cold email to {crm_email}")
+                    logger.info(f"Updated lead {lead_id} status to 'Junk Lead' - email sending failed")
+                    return False
             else:
-                logger.error(f"Failed to send cold email to {crm_email}")
-                return False
+                # No lead ID available, just log the result
+                if success:
+                    logger.info(f"Cold email sent successfully to {crm_email} for lead: {crm_fullname}")
+                    return True
+                else:
+                    logger.error(f"Failed to send cold email to {crm_email}")
+                    return False
                 
         except Exception as e:
             logger.error(f"Error sending cold email to lead {lead_data.get('full_name', 'Unknown')}: {e}")
+            # Update status to "Junk Lead" in case of error
+            lead_id = lead_data.get('id', '')
+            if lead_id:
+                self.update_lead_status_in_crm(lead_id, "Junk Lead")
+                logger.info(f"Updated lead {lead_id} status to 'Junk Lead' - error occurred")
+            return False
+    
+    def update_lead_status_in_crm(self, lead_id: str, new_status: str) -> bool:
+        """Update lead status in Zoho CRM"""
+        try:
+            initialize_sdk()
+            module_api_name = "Leads"
+            
+            # Create record instance for update
+            record_instance = Record()
+            record_instance.add_key_value("id", int(lead_id))
+            record_instance.add_key_value("Lead_Status", Choice(new_status))
+
+            # Wrap in BodyWrapper and call update_record (single record)
+            body_wrapper = BodyWrapper()
+            body_wrapper.set_data([record_instance])
+
+            # Update the record using update_record (requires int id)
+            response = RecordOperations().update_record(int(lead_id), module_api_name, body_wrapper)
+            
+            if response is not None:
+                logger.info(f"Successfully updated lead {lead_id} status to '{new_status}'")
+                return True
+            else:
+                logger.error(f"Failed to update lead {lead_id} status to '{new_status}'")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating lead {lead_id} status to '{new_status}': {e}")
             return False
     
     async def send_sync_summary_email(self):
@@ -341,16 +407,15 @@ async def async_sync_leads():
             # await sync_service.send_new_lead_notifications()
             
             # Send cold emails to new leads
-            for new_lead in sync_service.sync_stats['new_leads_details']:
-                if new_lead['email'] != '':
-                    print(f"Sending cold email to {new_lead['email']} ID: {new_lead['id']} TITLE: {new_lead['title']}")
+            new_leads = sync_service.sync_stats['new_leads_details']
+            if not new_leads:
+                logger.info("No new leads to send cold emails")
+            else:
+                for new_lead in new_leads:
                     await sync_service.send_cold_mail_to_new_lead(new_lead)
-                    break
-                else:
-                    print(f"No email address found for lead: {new_lead['id']}")
             
             # Send sync summary email
-            await sync_service.send_sync_summary_email()
+            # await sync_service.send_sync_summary_email()
             
             # Get statistics
             stats = sync_service.get_sync_statistics()
