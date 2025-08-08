@@ -23,6 +23,52 @@ class MailService:
         self.from_email = os.getenv('FROM_EMAIL', 'noreply@example.com')
         self.from_name = os.getenv('FROM_NAME', 'CRM Sync Service')
     
+    def _load_cold_email_template(self) -> str:
+        """Load the cold email HTML template from file"""
+        try:
+            template_path = os.path.join('templates', 'coldmain.html')
+            with open(template_path, 'r', encoding='utf-8') as file:
+                template_content = file.read()
+            
+            # Use a more robust approach to replace template placeholders
+            # First, escape any existing format braces that are not template placeholders
+            import re
+            
+            # Replace template placeholders with format placeholders
+            template_content = re.sub(r'\{\{\s*crm_fullname\s*\}\}', '{crm_fullname}', template_content)
+            template_content = re.sub(r'\{\{\s*crm_title\s*\}\}', '{crm_title}', template_content)
+            template_content = re.sub(r'\{\{\s*crm_email\s*\}\}', '{crm_email}', template_content)
+            
+            return template_content
+            
+        except FileNotFoundError:
+            logger.error(f"Cold email template file not found: {template_path}")
+            return self._get_fallback_cold_email_template()
+        except Exception as e:
+            logger.error(f"Error loading cold email template: {e}")
+            return self._get_fallback_cold_email_template()
+    
+    def _get_fallback_cold_email_template(self) -> str:
+        """Return a fallback cold email template if file loading fails"""
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Cold Email</title>
+        </head>
+        <body>
+            <h2>Re: Your Post About Hiring Engineers</h2>
+            <p>Hi <strong>{crm_fullname}</strong>,</p>
+            <p>Hope you're having a productive week!</p>
+            <p>We've all been there – drowning in resumes for key roles like <strong>{crm_title}</strong>, trying to find that perfect fit.</p>
+            <p>What if there was a way to cut through that clutter quickly and effectively? That's exactly what <strong>Referrals AI</strong> is designed to do.</p>
+            <p>Would you be open to a brief chat next week?</p>
+            <p>Best,<br>Jha</p>
+        </body>
+        </html>
+        '''
+    
     def get_email_template(self, template_name: str, template_data: Dict[str, Any] = None) -> tuple:
         """
         Get email template content based on template name
@@ -123,6 +169,35 @@ class MailService:
                 Best regards,
                 CRM Sync Team
                 '''
+            },
+            'cold_email': {
+                'subject': 'Re: Your Post About Hiring Engineers',
+                'html': self._load_cold_email_template(),
+                'plain': '''
+                Re: Your Post About Hiring Engineers
+
+                Hi {crm_fullname},
+
+                Hope you're having a productive week!
+
+                We've all been there – drowning in resumes for key roles like {crm_title}, trying to find that perfect fit. It's a massive time sink, and sometimes the best candidates slip through the cracks.
+
+                What if there was a way to cut through that clutter quickly and effectively? That's exactly what Referrals AI is designed to do. It's an AI-powered tool that pre-vets resumes, turning that overwhelming pile into a manageable list of potential candidates with smart scoring and analysis.
+
+                Benefits:
+                - Significantly less time spent on initial resume screening
+                - A clearer picture of candidate fit before you even pick up the phone
+                - Faster identification of top talent for your {crm_title} openings
+
+                I'd love to show you firsthand how Referrals AI can integrate into your current process and deliver these results.
+
+                Would you be open to a brief chat next week? I can give you a quick overview and explore how it can specifically address your hiring challenges for roles like {crm_title}.
+
+                Thanks for your time, and I look forward to the possibility of connecting.
+
+                Best,
+                Jha
+                '''
             }
         }
         
@@ -130,7 +205,17 @@ class MailService:
         
         try:
             subject = template['subject'].format(**template_data)
-            html_content = template['html'].format(**template_data)
+            
+            # Handle cold_email template differently to avoid CSS formatting issues
+            if template_name == 'cold_email':
+                html_content = template['html']
+                # Manually replace placeholders in HTML content
+                html_content = html_content.replace('{crm_fullname}', template_data.get('crm_fullname', ''))
+                html_content = html_content.replace('{crm_title}', template_data.get('crm_title', ''))
+                html_content = html_content.replace('{crm_email}', template_data.get('crm_email', ''))
+            else:
+                html_content = template['html'].format(**template_data)
+            
             plain_content = template['plain'].format(**template_data)
             
             return subject, html_content, plain_content
@@ -175,6 +260,8 @@ class MailService:
                 subject = subject or template_subject
                 html_content = html_content or template_html
                 plain_content = plain_content or template_plain
+
+            # print(f"\n\n\nSending email to {to_email} with subject {subject} and content {html_content}\n\n\n")
             
             # Create the email
             message = Mail(

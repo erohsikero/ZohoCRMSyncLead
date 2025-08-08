@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        @media only screen and (max-width:575px) {
+            .main-text { font-size: 20px !important; }
+            .td-padding-details { padding: 30px 15px !important; }
+            .button-style { font-size: 18px !important; }
+            .td-padding-details p, .td-padding-details span { font-size: 16px !important; line-height: 22px !important; }
+        }
+        body {
+            min-width: 100%;
+            margin: 0;
+            padding: 0;
+            font-size: 14px;
+            color: #000000;
+            background-color: #F3F4F7;
+            font-family: 'Roboto', sans-serif;
+        }
+        .email-container {
+            width: 100%;
+            max-width: 700px;
+            background-color: #FFFFFF;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        }
+        .main-text {
+            font-weight: 700;
+            color: #0B1F3F;
+            font-size: 26px;
+            padding-bottom: 20px;
+        }
+        .body-text {
+            font-weight: 400;
+            color: #333333;
+            font-size: 18px;
+            line-height: 26px;
+        }
+        .button-style {
+            border-radius: 6px;
+            font-weight: 500;
+            background: #0B1F3F;
+            color: #ffffff !important;
+            padding: 14px 28px;
+            font-size: 18px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .footer {
+            padding: 20px;
+            background: #0B1F3F;
+            color: #ffffff;
+            text-align: center;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+<table class="email-container" cellpadding="0" cellspacing="0" border="0" align="center">
+    <tr>
+        <td style="padding: 40px;" class="td-padding-details">
+            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tbody>
+                <tr>
+                    <td class="main-text">
+                        Re: Your Post About Hiring Engineers
+                    </td>
+                </tr>
+                <tr>
+                    <td class="body-text">
+                        Hi <strong>{{ crm_fullname }}</strong>,<br><br>
+                        Hope you're having a productive week!<br><br>
+
+                        We've all been there – drowning in resumes for key roles like <strong>{{ crm_title }}</strong>, trying to find that perfect fit. It's a massive time sink, and sometimes the best candidates slip through the cracks.<br><br>
+
+                        What if there was a way to cut through that clutter quickly and effectively? That's exactly what <strong>Referrals AI</strong> is designed to do. It's an AI-powered tool that pre-vets resumes, turning that overwhelming pile into a manageable list of potential candidates with smart scoring and analysis.<br><br>
+
+                        <ul style="margin: 0; padding-left: 20px;">
+                            <li>Significantly less time spent on initial resume screening</li>
+                            <li>A clearer picture of candidate fit before you even pick up the phone</li>
+                            <li>Faster identification of top talent for your <strong>{{ crm_title }}</strong> openings</li>
+                        </ul><br>
+
+                        I'd love to show you firsthand how Referrals AI can integrate into your current process and deliver these results.<br><br>
+
+                        Would you be open to a brief chat next week? I can give you a quick overview and explore how it can specifically address your hiring challenges for roles like <strong>{{ crm_title }}</strong>.<br><br>
+                    </td>
+                </tr>
+                <tr>
+                    <td align="center" style="padding: 20px 0;">
+                        <a href="https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ2uOL0li4puqTVZJ1YrEaO1BfJIyroun79rwnJ605lrKugBcqSDOXbSSVx2QNTstj7_7Mmf2bU0" class="button-style">Schedule a Call</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="body-text" style="padding-top: 20px;">
+                        Thanks for your time, and I look forward to the possibility of connecting.<br><br>
+                        Best,<br>
+                        Jha
+                    </td>
+                </tr>
+                <tr>
+                    <td style="width:160px;height:40px;overflow:hidden;display:flex;align-items:center;justify-content:center;padding-top: 25px;"><img src="https://recruiter.getreferrals.ai/logo_landscape.png" alt="GetReferrals.ai Logo" />
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </td>
+    </tr>
+
+    <tr>
+        <td class="footer">
+            &copy; 2024 Referrals AI. All rights reserved.
+        </td>
+    </tr>
+</table>
+</body>
+</html>

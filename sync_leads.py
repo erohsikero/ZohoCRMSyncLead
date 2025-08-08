@@ -1,3 +1,4 @@
+from queue import Empty
 from initialize_sdk import initialize_sdk
 from zcrmsdk.src.com.zoho.crm.api.record import RecordOperations
 from zcrmsdk.src.com.zoho.crm.api.record import GetRecordsParam
@@ -161,13 +162,18 @@ class LeadSyncService:
                     if is_new_lead:
                         self.sync_stats['new_leads'] += 1
                         # Store new lead details for email notification
-                        self.sync_stats['new_leads_details'].append({
+                        # print(f"New lead detected Data: {data}")
+                        # print(f"New lead detected: {full_name} ({email} {data.get('Designation', '')})")
+                        lead_details = {
                             'id': lead_id,
                             'full_name': full_name,
                             'email': email,
                             'phone': phone,
+                            'title': data.get("Designation", "Engineer"),  # Get title from CRM
                             'sync_time': datetime.now().isoformat()
-                        })
+                        }
+
+                        self.sync_stats['new_leads_details'].append(lead_details)
                         logger.info(f"New lead detected: {full_name} ({email})")
                     else:
                         self.sync_stats['updated_leads'] += 1
@@ -227,6 +233,43 @@ class LeadSyncService:
                         
             except Exception as e:
                 logger.error(f"Error sending new lead notification: {e}")
+    
+    async def send_cold_mail_to_new_lead(self, lead_data: Dict):
+        """Send cold email to a new lead using CRM data"""
+        try:
+            # Extract data from CRM
+            crm_fullname = lead_data.get('full_name', '')
+            crm_title = lead_data.get('title', 'Engineer')  # Default to Engineer if no title
+            crm_email = lead_data.get('email', '')
+
+            print(f"Sending cold email to EMAIL : {crm_email} \n NAME : {crm_fullname} \n TITLE : {crm_title} \n ID : {lead_data.get('id', '')}")
+            
+            
+            if not crm_email:
+                logger.error(f"No email address found for lead: {crm_fullname}")
+                return False
+            
+            # Send cold email to the lead
+            success = await self.mail_service.send_mail(
+                to_email=crm_email,
+                template_name='cold_email',
+                template_data={
+                    'crm_fullname': crm_fullname,
+                    'crm_title': crm_title,
+                    'crm_email': crm_email
+                }
+            )
+            
+            if success:
+                logger.info(f"Cold email sent successfully to {crm_email} for lead: {crm_fullname}")
+                return True
+            else:
+                logger.error(f"Failed to send cold email to {crm_email}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending cold email to lead {lead_data.get('full_name', 'Unknown')}: {e}")
+            return False
     
     async def send_sync_summary_email(self):
         """Send sync summary email"""
@@ -295,7 +338,16 @@ async def async_sync_leads():
             sync_service.save_to_local_db(records)
             
             # Send email notifications for new leads
-            await sync_service.send_new_lead_notifications()
+            # await sync_service.send_new_lead_notifications()
+            
+            # Send cold emails to new leads
+            for new_lead in sync_service.sync_stats['new_leads_details']:
+                if new_lead['email'] != '':
+                    print(f"Sending cold email to {new_lead['email']} ID: {new_lead['id']} TITLE: {new_lead['title']}")
+                    await sync_service.send_cold_mail_to_new_lead(new_lead)
+                    break
+                else:
+                    print(f"No email address found for lead: {new_lead['id']}")
             
             # Send sync summary email
             await sync_service.send_sync_summary_email()
