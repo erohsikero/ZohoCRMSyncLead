@@ -420,7 +420,7 @@ async def async_sync_leads():
                     await sync_service.send_cold_mail_to_new_lead(new_lead)
             
             # Send sync summary email
-            # await sync_service.send_sync_summary_email()
+            await sync_service.send_sync_summary_email()
             
             # Get statistics
             stats = sync_service.get_sync_statistics()
