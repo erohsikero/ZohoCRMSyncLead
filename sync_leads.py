@@ -179,7 +179,8 @@ class LeadSyncService:
                             'email': email,
                             'phone': phone,
                             'title': data.get("Designation", "Engineer"),  # Get title from CRM
-                            'sync_time': datetime.now().isoformat()
+                            'sync_time': datetime.now().isoformat(),
+                            'Lead_Status': lead_status
                         }
 
                         self.sync_stats['new_leads_details'].append(lead_details)
@@ -252,9 +253,7 @@ class LeadSyncService:
             crm_title = lead_data.get('title', 'Engineer')  # Default to Engineer if no title
             crm_email = lead_data.get('email', '')
             lead_id = lead_data.get('id', '')
-            lead_status_choice = lead_data.get('Lead_Status')
-            lead_status = lead_status_choice.get_value() if lead_status_choice else ''
-            lead_status = str(lead_status)
+            lead_status = lead_data.get('Lead_Status')
 
 
             if lead_status == 'Contacted': 
