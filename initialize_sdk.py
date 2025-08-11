@@ -1,3 +1,4 @@
+from zcrmsdk.src.com.zoho.crm.api.dc.us_data_center import USDataCenter
 from zcrmsdk.src.com.zoho.crm.api.user_signature import UserSignature
 from zcrmsdk.src.com.zoho.api.authenticator.store import FileStore
 from zcrmsdk.src.com.zoho.api.logger import Logger
@@ -18,6 +19,7 @@ def initialize_sdk():
     user = UserSignature(userEmail)
 
     environment = CADataCenter.PRODUCTION()
+    # environment = USDataCenter.PRODUCTION()
     print("Environment Created:", environment)
     # Initialize OAuth token
     clientId = os.getenv('ZOHO_CLIENT_ID')

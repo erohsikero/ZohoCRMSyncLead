@@ -1,4 +1,5 @@
 from queue import Empty
+import traceback
 from zcrmsdk.src.com.zoho.crm.api.util.choice import Choice
 from initialize_sdk import initialize_sdk
 from zcrmsdk.src.com.zoho.crm.api.record import RecordOperations
@@ -54,6 +55,7 @@ class LeadSyncService:
                     full_name VARCHAR(255),
                     email VARCHAR(255),
                     phone VARCHAR(255),
+                    lead_status VARCHAR(255),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -147,28 +149,30 @@ class LeadSyncService:
                     full_name = data.get("Full_Name", "")
                     email = data.get("Email", "")
                     phone = data.get("Phone", "")
+                    lead_status_choice = data.get('Lead_Status')
+                    lead_status = lead_status_choice.get_value() if lead_status_choice else ''
+                    lead_status = str(lead_status)
                     
                     # Track if this is a new or updated lead
                     is_new_lead = str(lead_id) not in existing_ids
                     # print(f"Is new lead: {is_new_lead}")
                     
                     cursor.execute("""
-                        INSERT INTO leads (id, full_name, email, phone, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO leads (id, full_name, email, phone, lead_status, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (id) DO UPDATE SET
                             full_name = EXCLUDED.full_name,
                             email = EXCLUDED.email,
                             phone = EXCLUDED.phone,
+                            lead_status = EXCLUDED.lead_status,
                             updated_at = EXCLUDED.updated_at
-                    """, (lead_id, full_name, email, phone, datetime.now(), datetime.now()))
+                    """, (lead_id, full_name, email, phone, lead_status, datetime.now(), datetime.now()))
                     
                     if is_new_lead:
                         self.sync_stats['new_leads'] += 1
                         # Store new lead details for email notification
                         # print(f"New lead detected Data: {data}")
-                        lead_status_choice = data.get('Lead_Status')
-                        lead_status = lead_status_choice.get_value() if lead_status_choice else None
-                        print(f"New lead detected: {full_name} ({email} \nLead Status : {lead_status} designation : {data.get('Designation', '')} \n{data})")
+                        logger.info(f"New lead detected: {full_name} ({email} Lead Status : {lead_status} designation : {data.get('Designation', '')} \n{data})")
                         lead_details = {
                             'id': lead_id,
                             'full_name': full_name,
@@ -179,7 +183,7 @@ class LeadSyncService:
                         }
 
                         self.sync_stats['new_leads_details'].append(lead_details)
-                        logger.info(f"New lead detected: {full_name} ({email})")
+                        logger.info(f"New lead added to list: {full_name} ({email})")
                     else:
                         self.sync_stats['updated_leads'] += 1
                     
@@ -188,6 +192,7 @@ class LeadSyncService:
                 except Exception as e:
                     error_msg = f"Error processing lead {lead_id}: {str(e)}"
                     logger.error(error_msg)
+                    logger.error(traceback.print_exc())
                     self.sync_stats['errors'].append(error_msg)
                     continue
 
@@ -249,10 +254,11 @@ class LeadSyncService:
             lead_id = lead_data.get('id', '')
             lead_status_choice = lead_data.get('Lead_Status')
             lead_status = lead_status_choice.get_value() if lead_status_choice else ''
+            lead_status = str(lead_status)
 
 
-            if lead_status in ('Contacted'): 
-                print(f"New Lead Contact already present As Contacted EMAIL : {crm_email} \n NAME : {crm_fullname} \n TITLE : {crm_title} \n Lead Status {lead_status}\n ID : {lead_id} ")
+            if lead_status == 'Contacted': 
+                logger.warning(f"New Lead Contact already present As Contacted EMAIL : {crm_email} NAME : {crm_fullname} TITLE : {crm_title} Lead Status {lead_status} ID : {lead_id} ")
                 return True
 
             # Check if email exists
@@ -264,7 +270,7 @@ class LeadSyncService:
                     logger.info(f"Updated lead {lead_id} status to 'Lost Lead' - no email found")
                 return False
             
-            print(f"Sending cold email to EMAIL : {crm_email} \n NAME : {crm_fullname} \n TITLE : {crm_title} \n ID : {lead_id} \n Lead Status {lead_status}")
+            logger.info(f"Sending cold email to EMAIL : {crm_email} NAME : {crm_fullname} TITLE : {crm_title} ID : {lead_id} Lead Status {lead_status}")
             # Send cold email to the lead
             success = await self.mail_service.send_mail(
                 to_email=crm_email,
