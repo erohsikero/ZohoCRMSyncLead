@@ -33,8 +33,8 @@ class ZohoSDKInitializer:
         print("User Email:", userEmail)
         user = UserSignature(userEmail)
 
-        environment = CADataCenter.PRODUCTION()
-        # environment = USDataCenter.PRODUCTION()
+        # environment = CADataCenter.PRODUCTION()
+        environment = USDataCenter.PRODUCTION()
         print("Environment Created:", environment)
         # Initialize OAuth token
         clientId = os.getenv('ZOHO_CLIENT_ID')
