@@ -287,7 +287,7 @@ class LeadSyncService:
                 if success:
                     # Email sent successfully - update to "Contacted"
                     self.update_lead_status_in_crm(lead_id, "Contacted")
-                    logger.info(f"Cold email sent successfully to {crm_email} for lead: {crm_fullname}")
+                    logger.info(f"Sent cold email to EMAIL : {crm_email} for lead: {crm_fullname}")
                     logger.info(f"Updated lead {lead_id} status to 'Contacted'")
                     return True
                 else:
